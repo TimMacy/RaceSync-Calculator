@@ -24,4 +24,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create v1.0 'RaceSync-Calculator-macOS-universal.zip' --target "$GITHUB_SHA" --title 'RaceSync Calculator v1.0' --generate-notes --latest
+        run: gh release create v1.0 'RaceSync-Calculator-macOS-universal.zip' --target "$GITHUB_SHA" --title 'RaceSync Calculator v1.0' --notes "" --latest
