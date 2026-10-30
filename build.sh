@@ -16,6 +16,7 @@ done
 
 lipo -create "$work/arm64" "$work/x86_64" -output "$work/RaceSync Calculator"
 mkdir -p "$work/$app/Contents/MacOS" "$work/$app/Contents/Resources"
+cp Credits.rtf "$work/$app/Contents/Resources/Credits.rtf"
 cp "$work/RaceSync Calculator" "$work/$app/Contents/MacOS/RaceSync Calculator"
 cat > "$work/$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
