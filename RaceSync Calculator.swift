@@ -8,19 +8,22 @@ class CaptureEngine: NSObject, ObservableObject {
     @Published var clockAppImage: CGImage?
 
     private var stream: SCStream?
+    @MainActor private var captureTask: Task<Void, Never>?
     private var multiViewerRegionRectTopLeft: CGRect?
     private var clockAppRegionRectTopLeft: CGRect?
 
     private let videoOutputQueue = DispatchQueue(label: "com.example.videoOutputQueue", qos: .userInitiated)
     private var screen: NSScreen?
 
+    @MainActor
     func startCapture(multiViewerRegionTopLeft: CGRect?, clockAppRegionTopLeft: CGRect?) {
-        guard !isCapturing else { return }
+        let previousTask = captureTask
+        captureTask = Task {
+            await previousTask?.value
+            guard !isCapturing else { return }
 
-        self.multiViewerRegionRectTopLeft = multiViewerRegionTopLeft
-        self.clockAppRegionRectTopLeft = clockAppRegionTopLeft
-
-        Task {
+            self.multiViewerRegionRectTopLeft = multiViewerRegionTopLeft
+            self.clockAppRegionRectTopLeft = clockAppRegionTopLeft
             do {
                 guard await checkScreenCapturePermission() else {
                     print("Screen capture permission denied.")
@@ -72,11 +75,14 @@ class CaptureEngine: NSObject, ObservableObject {
         }
     }
 
+    @MainActor
     func stopCapture() {
-        guard isCapturing, let stream = self.stream else { return }
-        self.stream = nil
+        let previousTask = captureTask
+        captureTask = Task {
+            await previousTask?.value
+            guard isCapturing, let stream = self.stream else { return }
+            self.stream = nil
 
-        Task {
             do {
                 try await stream.stopCapture()
                 await MainActor.run {
@@ -165,6 +171,7 @@ extension CaptureEngine: SCStreamOutput, SCStreamDelegate {
         }
 
         DispatchQueue.main.async {
+            guard self.stream === stream else { return }
             if newMultiViewerImage != nil {
                 self.multiViewerImage = newMultiViewerImage
             } else if self.multiViewerRegionRectTopLeft != nil {
@@ -181,6 +188,8 @@ extension CaptureEngine: SCStreamOutput, SCStreamDelegate {
         print("Stream stopped unexpectedly with error: \(error.localizedDescription)")
         Task {
             await MainActor.run {
+                guard self.stream === stream else { return }
+                self.stream = nil
                 self.isCapturing = false
                 self.multiViewerImage = nil
                 self.clockAppImage = nil
@@ -441,8 +450,11 @@ struct ContentView: View {
         selectionWindow.hasShadow = false
         selectionWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         selectionWindow.isMovableByWindowBackground = false
+        selectionWindow.isReleasedWhenClosed = false
         let selectionView = RegionSelectionView(completion: { selectedRect in
             selectionWindow.orderOut(nil)
+            selectionWindow.contentView = nil
+            selectionWindow.close()
             completion(selectedRect)
         })
 
@@ -467,10 +479,8 @@ struct ContentView: View {
         let multiViewerTopLeft = multiViewerRegionBottomLeft.flatMap { convertToTopLeft(rectBottomLeft: $0) }
         let clockAppTopLeft = clockAppRegionBottomLeft.flatMap { convertToTopLeft(rectBottomLeft: $0) }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            captureEngine.startCapture(multiViewerRegionTopLeft: multiViewerTopLeft,
-                                       clockAppRegionTopLeft: clockAppTopLeft)
-        }
+        captureEngine.startCapture(multiViewerRegionTopLeft: multiViewerTopLeft,
+                                   clockAppRegionTopLeft: clockAppTopLeft)
     }
 
     func performOCR(on image: CGImage, completion: @escaping (String?) -> Void) {
