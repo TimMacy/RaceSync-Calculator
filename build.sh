@@ -9,7 +9,7 @@ sdk="$(xcrun --sdk macosx --show-sdk-path)"
 
 for arch in arm64 x86_64; do
     xcrun swiftc -sdk "$sdk" -target "${arch}-apple-macos15.2" \
-        -parse-as-library -O "RaceSync Calculator.swift" \
+        -parse-as-library -O Sources/*.swift \
         -framework SwiftUI -framework AppKit -framework Vision -framework ScreenCaptureKit \
         -o "$work/$arch"
 done
@@ -17,6 +17,8 @@ done
 lipo -create "$work/arm64" "$work/x86_64" -output "$work/RaceSync Calculator"
 mkdir -p "$work/$app/Contents/MacOS" "$work/$app/Contents/Resources"
 cp Credits.rtf "$work/$app/Contents/Resources/Credits.rtf"
+mkdir -p "$work/$app/Contents/Resources/Fonts"
+cp Fonts/*.ttf Fonts/*.txt "$work/$app/Contents/Resources/Fonts/"
 cp "$work/RaceSync Calculator" "$work/$app/Contents/MacOS/RaceSync Calculator"
 cat > "$work/$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -34,9 +36,9 @@ cat > "$work/$app/Contents/Info.plist" <<'PLIST'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>3.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>3</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
