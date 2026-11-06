@@ -7,7 +7,7 @@ This Mac app helps to quickly calculate the delay needed to sync a live session 
 ## Session timer
 For broadcasts with a session timer, such as Free Practice or Qualifying:
 
-1. Click **Select MultiViewer timer region** and capture the time in the top-left corner of the NAME window.
+1. Click **Select MultiViewer timer region** and capture the time in the top-left corner of the **Live Timing** window.
 2. Copy the MultiViewer delay into the **Current MultiViewer delay** field.
 3. Enter a **Target time** that the TV broadcast hasn't reached yet.
 4. Once the broadcast timer matches the target time, either click **Calculate delay** or hit return.
@@ -20,7 +20,7 @@ For sessions without a visible timer, like a race:
 
 1. Switch to the **Race timer**.
 2. For a Sprint, click **Race mode** in the bottom-right corner to switch to **Sprint mode**. This has to be set before lights out!
-3. Click **Select MultiViewer timer region** and capture the time in the top-left corner of the NAME window.
+3. Click **Select MultiViewer timer region** and capture the time in the top-left corner of the **Live Timing** window.
 4. Copy the MultiViewer delay into the **Current MultiViewer delay** field.
 5. Click and hold the **Lights out** button and release it the moment the five red lights go out on TV. Do not move the cursor off the button until released!
 6. When the MultiViewer timer is running, click **Calculate delay** or hit return.
