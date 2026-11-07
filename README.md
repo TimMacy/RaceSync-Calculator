@@ -7,7 +7,7 @@ This Mac app helps to quickly calculate the delay needed to sync a live session 
 ## Session timer
 For broadcasts with a session timer, such as Free Practice or Qualifying:
 
-<img align="right" width="50%" alt="Session timer" src="https://github.com/user-attachments/assets/c32010b3-7128-462b-a82e-179ccaf3c754" />
+<img align="right" width="50%" alt="Session timer" src="https://github.com/user-attachments/assets/319d4101-6503-4227-81f1-ae6db5615734" />
 
 1. Click **Select MultiViewer timer region** and capture the time in the top-left corner of the **Live Timing** window.
 2. Copy the MultiViewer delay into the **Current MultiViewer delay** field.
