@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Pit Wall components -
 
@@ -170,6 +171,8 @@ struct SolidButtonStyle: ButtonStyle {
 }
 
 /// Text field drawn as a dark input well.
+/// Pass `formatter` (with `nativeFont`) to use AppKit's own text field, which applies the
+/// formatter on every key press, text and cursor together (Apple's custom-formatter approach).
 struct WellField: View {
     let placeholder: String
     @Binding var text: String
@@ -180,7 +183,12 @@ struct WellField: View {
     var background: Color = PW.well
     var radius: CGFloat = 6
     var suffix: String? = nil
+    var formatter: Formatter? = nil
+    var nativeFont: NSFont? = nil
     @FocusState private var focused: Bool
+    @State private var nativeFocused = false
+
+    private var isActive: Bool { formatter == nil ? focused : nativeFocused }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -193,12 +201,21 @@ struct WellField: View {
                         .frame(maxWidth: .infinity, alignment: alignment == .center ? .center : .leading)
                         .allowsHitTesting(false)
                 }
-                TextField("", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(font)
-                    .foregroundStyle(color)
-                    .multilineTextAlignment(alignment)
-                    .focused($focused)
+                if let formatter {
+                    NativeTextField(text: $text,
+                                    isFocused: $nativeFocused,
+                                    formatter: formatter,
+                                    font: nativeFont ?? .systemFont(ofSize: NSFont.systemFontSize),
+                                    color: NSColor(color),
+                                    alignment: alignment == .center ? .center : .left)
+                } else {
+                    TextField("", text: $text)
+                        .textFieldStyle(.plain)
+                        .font(font)
+                        .foregroundStyle(color)
+                        .multilineTextAlignment(alignment)
+                        .focused($focused)
+                }
             }
             if let suffix {
                 Text(suffix).font(PW.mono(12)).foregroundStyle(PW.muted)
@@ -209,9 +226,78 @@ struct WellField: View {
         .background(RoundedRectangle(cornerRadius: radius).fill(background))
         .overlay(
             RoundedRectangle(cornerRadius: radius)
-                .strokeBorder(focused ? PW.purple : PW.inputBorder, lineWidth: focused ? 2 : 1)
+                .strokeBorder(isActive ? PW.purple : PW.inputBorder, lineWidth: isActive ? 2 : 1)
         )
         .contentShape(Rectangle())
-        .onTapGesture { focused = true }
+        .onTapGesture {
+            if formatter == nil { focused = true } else { nativeFocused = true }
+        }
+    }
+}
+
+/// Borderless AppKit text field with a live formatter, styled by the surrounding well.
+struct NativeTextField: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    let formatter: Formatter
+    let font: NSFont
+    let color: NSColor
+    let alignment: NSTextAlignment
+
+    func makeNSView(context: Context) -> FocusReportingTextField {
+        let field = FocusReportingTextField(string: text)
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.cell?.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.formatter = formatter
+        field.delegate = context.coordinator
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return field
+    }
+
+    func updateNSView(_ field: FocusReportingTextField, context: Context) {
+        context.coordinator.parent = self
+        field.font = font
+        field.textColor = color
+        field.alignment = alignment
+        field.onFocusChange = { focused in
+            if isFocused != focused { isFocused = focused }
+        }
+        let current = field.currentEditor()?.string ?? field.stringValue
+        if current != text { field.stringValue = text }
+        if isFocused && field.currentEditor() == nil {
+            DispatchQueue.main.async { field.window?.makeFirstResponder(field) }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: NativeTextField
+        init(parent: NativeTextField) { self.parent = parent }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            parent.text = field.currentEditor()?.string ?? field.stringValue
+        }
+    }
+}
+
+/// Reports when it gains and loses keyboard focus, so the well can draw its border.
+final class FocusReportingTextField: NSTextField {
+    var onFocusChange: ((Bool) -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { onFocusChange?(true) }
+        return became
+    }
+
+    override func textDidEndEditing(_ notification: Notification) {
+        super.textDidEndEditing(notification)
+        onFocusChange?(false)
     }
 }

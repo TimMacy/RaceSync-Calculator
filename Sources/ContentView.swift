@@ -322,6 +322,7 @@ struct ContentView: View {
         let frame = NSWindow.frameRect(forContentRect: content, styleMask: [.titled, .closable, .miniaturizable])
         return frame.height - content.height
     }()
+    private static let sessionFormatter = SessionTimeFormatter()
     private static let resultHeight: CGFloat = 144 // fits the 64 pt number without re-centering
 
     init(captureEngine: CaptureEngine) {
@@ -528,7 +529,9 @@ struct ContentView: View {
                           font: PW.mono(34, .bold),
                           color: PW.yellow,
                           alignment: .center,
-                          height: 64)
+                          height: 64,
+                          formatter: Self.sessionFormatter,
+                          nativeFont: NSFont(name: "JetBrainsMono-Bold", size: 34))
             }
 
             Text("Hit Calculate the moment your TV clock shows this time.")
@@ -656,6 +659,10 @@ struct ContentView: View {
                       background: PW.card,
                       radius: 8,
                       suffix: "ms")
+                .onChange(of: currentDelay) { _, new in
+                    let digits = new.filter { $0.isASCII && $0.isNumber }
+                    if digits != new { currentDelay = digits }
+                }
         }
         .frame(maxWidth: .infinity)
     }
@@ -665,10 +672,10 @@ struct ContentView: View {
             Text("Offset detected").font(PW.ui(12)).foregroundStyle(PW.muted)
             HStack(spacing: 10) {
                 if case let .delay(_, offsetMs) = outcome {
-                    Text(String(format: "%+d s", offsetMs / 1000))
+                    Text(String(format: "%+ds", offsetMs / 1000))
                         .font(PW.mono(20, .bold))
                         .foregroundStyle(PW.green)
-                    Text(offsetMs > 0 ? "MV ahead of TV" : offsetMs < 0 ? "MV behind TV" : "In sync")
+                    Text(offsetMs > 0 ? "MultiViewer ahead of TV" : offsetMs < 0 ? "MultiViewer behind TV" : "In sync")
                         .font(PW.ui(12))
                         .foregroundStyle(PW.greenSoft)
                 } else {
