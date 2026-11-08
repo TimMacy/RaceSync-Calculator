@@ -147,7 +147,6 @@ struct OutlineButtonStyle: ButtonStyle {
             )
             .contentShape(Rectangle())
             .opacity(isEnabled ? 1 : 0.4)
-            .pointerStyle(isEnabled ? .link : nil)
     }
 }
 
@@ -166,7 +165,6 @@ struct SolidButtonStyle: ButtonStyle {
             .contentShape(Rectangle())
             .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
             .scaleEffect(configuration.isPressed ? 0.99 : 1)
-            .pointerStyle(isEnabled ? .link : nil)
     }
 }
 

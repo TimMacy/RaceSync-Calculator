@@ -312,6 +312,7 @@ struct ContentView: View {
     @State private var showReadingHint = false // only if reading takes over a second
     @State private var copied = false
     @State private var copyID = 0
+    @State private var isHoveringModeToggle = false
 
     // Fixed sizes so the window never changes height.
     private static let feedsHeight: CGFloat = 330
@@ -436,7 +437,6 @@ struct ContentView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { mode = m } // no press effect, the highlight just slides over
-                    .pointerStyle(mode == m ? nil : .link)
                     .accessibilityElement()
                     .accessibilityLabel(m.rawValue)
                     .accessibilityAddTraits(mode == m ? [.isButton, .isSelected] : .isButton)
@@ -749,7 +749,6 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .pointerStyle(isDelayOutcome ? .link : nil)
             .disabled(!isDelayOutcome)
             .opacity(isDelayOutcome ? 1 : 0.4)
             .help("Copy to clipboard")
@@ -795,18 +794,16 @@ struct ContentView: View {
                     Text(raceTimer.isSprint ? "SPRINT " : "RACE ")
                     Text("MODE")
                 }
+                    // Hover tint (Apple HIG: tint, not scale, for small elements). No tint while locked;
+                    // the pointer stays the standard arrow either way.
+                    .foregroundStyle(isHoveringModeToggle && !raceTimer.hasStarted ? PW.text : PW.muted)
+                    .animation(.easeOut(duration: 0.15), value: isHoveringModeToggle)
+                    .onHover { isHoveringModeToggle = $0 }
                     .contentShape(Rectangle())
                     .accessibilityElement(children: .combine)
                     .onTapGesture(perform: toggleSprint)
                     .accessibilityAddTraits(.isButton)
                     .accessibilityAction { toggleSprint() }
-                    .onHover { inside in
-                        if inside {
-                            (raceTimer.hasStarted ? NSCursor.operationNotAllowed : NSCursor.pointingHand).push()
-                        } else {
-                            NSCursor.pop()
-                        }
-                    }
                     .help(raceTimer.hasStarted ? "Reset the timer to switch modes"
                           : raceTimer.isSprint ? "Switch to a 2-hour race" : "Switch to a 1-hour sprint race")
             }
