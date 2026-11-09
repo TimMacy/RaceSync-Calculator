@@ -2,7 +2,7 @@
 
 This Mac app helps to quickly calculate the delay needed to sync a live session of MultiViewer's live timing with a live TV race broadcast, using either the visible session timer or the race session duration set by the FIA.
 
-<p align="center"><img width="50%" alt="App Session timer" src="https://github.com/user-attachments/assets/95fe128a-0312-4dd5-be1c-1ae39fb171f7" /><img width="50%" alt="App Race timer" src="https://github.com/user-attachments/assets/a8e507b1-cfae-4366-ae8e-1115a6aa347d" /></p>
+<p align="center"><img width="50%" alt="App Session timer" src="https://github.com/user-attachments/assets/95fe128a-0312-4dd5-be1c-1ae39fb171f7" /><img width="50%" alt="App Race timer" src="https://github.com/user-attachments/assets/8f8359a4-384f-45cc-8b53-e3fc5ea40bd5" /></p>
 
 ## Session timer
 For broadcasts with a session timer, such as Free Practice or Qualifying:
@@ -20,6 +20,8 @@ For broadcasts with a session timer, such as Free Practice or Qualifying:
 ## Race timer
 For sessions without a visible timer, like a race:
 
+<img align="right" width="50%" alt="Race timer" src="https://github.com/user-attachments/assets/118ed72d-8c41-4fa5-a42a-1dde917a7ff1" />
+
 1. Switch to the **Race timer**.
 2. For a Sprint, click **Race mode** in the bottom-right corner to switch to **Sprint mode**. This has to be set before lights out!
 3. Click **Select MultiViewer timer region** and capture the time in the top-left corner of the **Live Timing** window.
@@ -28,9 +30,9 @@ For sessions without a visible timer, like a race:
 6. When the MultiViewer timer is running, click **Calculate delay** or hit return.
 7. Copy the recommended delay into MultiViewer via the **copy button** and click **APPLY**.
 
-Instead of the in-app timer, a 2-hour timer (1 hour for a Sprint) in the Clock app can also be captured via the **Capture Clock app region** button. The timer has to be started in the same way as mentioned in point 5.
+For races that use neither the 2-hour Race period nor the 1-hour Sprint period, the Clock app can be captured instead via the **Select Clock app timer region** button. The timer has to be started the same way as described in point 5.
 
-[image]
+<br clear="right" />
 
 ## Install
 
