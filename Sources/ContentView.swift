@@ -628,7 +628,7 @@ struct ContentView: View {
                     }
                 }
             } else {
-                Button("Capture Clock app region") { selectClockAppRegion() }
+                Button("Select Clock app timer region") { selectClockAppRegion() }
                     .buttonStyle(OutlineButtonStyle(dashed: true))
                     .disabled(raceTimer.hasStarted)
                     .help(raceTimer.hasStarted ? "Reset the in-app timer to use the Clock app instead" : "")
