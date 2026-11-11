@@ -16,6 +16,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Read app version
+        id: version
+        shell: bash
+        run: |
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "Invalid app version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Build universal macOS app
         run: bash ./build.sh
       - name: Package app
@@ -24,4 +31,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create v3.0 'RaceSync-Calculator-macOS-universal.zip' --target "$GITHUB_SHA" --title 'RaceSync Calculator v3.0' --notes "" --latest
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$APP_VERSION" 'RaceSync-Calculator-macOS-universal.zip' \
+            --target "$GITHUB_SHA" --title "RaceSync Calculator v$APP_VERSION" --notes "" --latest

@@ -20,36 +20,10 @@ cp Credits.rtf "$work/$app/Contents/Resources/Credits.rtf"
 mkdir -p "$work/$app/Contents/Resources/Fonts"
 cp Fonts/*.ttf Fonts/*.txt "$work/$app/Contents/Resources/Fonts/"
 cp "$work/RaceSync Calculator" "$work/$app/Contents/MacOS/RaceSync Calculator"
-cat > "$work/$app/Contents/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>RaceSync Calculator</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.racesync.calculator</string>
-    <key>CFBundleName</key>
-    <string>RaceSync Calculator</string>
-    <key>CFBundleDisplayName</key>
-    <string>RaceSync Calculator</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>3.0</string>
-    <key>CFBundleVersion</key>
-    <string>3</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>15.2</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSScreenCaptureUsageDescription</key>
-    <string>Screen access is needed to read the selected timer regions.</string>
-</dict>
-</plist>
-PLIST
+cp Info.plist "$work/$app/Contents/Info.plist"
+version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $version" "$work/$app/Contents/Info.plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $version" "$work/$app/Contents/Info.plist"
 
 cat > "$work/entitlements.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
