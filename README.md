@@ -1,6 +1,6 @@
 # RaceSync Calculator <a href="https://github.com/TimMacy/RaceSync-Calculator/releases"><img height="25px" align="right" src="https://img.shields.io/github/v/release/TimMacy/RaceSync-Calculator?style=for-the-badge" alt="Releases"></a><a href="https://github.com/TimMacy/RaceSync-Calculator/blob/main/LICENSE"><img height="25px" align="right" src="https://img.shields.io/github/license/TimMacy/RaceSync-Calculator?style=for-the-badge&color=white" alt="MIT License"></a>
 
-This Mac app helps to calculate the delay needed to sync a live session of MultiViewer's live timing with a live TV race broadcast, using either the visible session timer or the race session duration set by the FIA.
+This Mac app helps to calculate the delay needed to sync a MultiViewer's live timing with a live TV race broadcast, using either the visible session timer or the race session duration set by the FIA.
 
 <p align="center"><img width="50%" alt="App Session timer" src="https://github.com/user-attachments/assets/95fe128a-0312-4dd5-be1c-1ae39fb171f7" /><img width="50%" alt="App Race timer" src="https://github.com/user-attachments/assets/8f8359a4-384f-45cc-8b53-e3fc5ea40bd5" /></p>
 
