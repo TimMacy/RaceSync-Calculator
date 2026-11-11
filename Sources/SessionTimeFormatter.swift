@@ -3,7 +3,7 @@ import Foundation
 /// Live MM:SS formatter for the TV session time field, following Apple's
 /// "Creating a Custom Formatter" guide: AppKit calls `isPartialStringValid` on every
 /// key press and applies the returned text and cursor together.
-/// Digits only (max 4); the colon is inserted after the minutes.
+/// Digits only (max 4); the colon is inserted after the minutes, or typed after one digit ("4:" -> "04:").
 final class SessionTimeFormatter: Formatter {
 
     override func string(for obj: Any?) -> String? {
@@ -26,7 +26,12 @@ final class SessionTimeFormatter: Formatter {
 
         // Reject letters and symbols outright: the key press never reaches the field.
         guard partial.allSatisfy({ $0 == ":" || ($0.isASCII && $0.isNumber) }) else { return false }
-        let digits = partial.filter { $0 != ":" }
+        var digits = partial.filter { $0 != ":" }
+
+        // A colon typed after a single digit ("4:") means minutes under ten: keep it as "04:".
+        let typedColon = partial.contains(":") && !origString.contains(":")
+        let padded = typedColon && partial.prefix(while: { $0 != ":" }).count == 1
+        if padded { digits = "0" + digits }
         guard digits.count <= 4 else { return false }
 
         // Backspacing the trailing colon ("49:" -> "49") removes it instead of re-adding it.
@@ -47,6 +52,7 @@ final class SessionTimeFormatter: Formatter {
             newCaret = formatted.utf16.count
         } else {
             let digitsBefore = partial.utf16.prefix(caret).filter { $0 != UInt16(UInt8(ascii: ":")) }.count
+                + (padded ? 1 : 0)
             newCaret = digitsBefore + (digitsBefore > 2 ? 1 : 0)
         }
 

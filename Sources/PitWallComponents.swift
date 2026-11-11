@@ -63,7 +63,6 @@ struct FeedCard<Content: View>: View {
 
 /// Dark capture well with viewfinder corner brackets.
 struct Viewfinder<Content: View>: View {
-    var active: Bool
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -71,7 +70,7 @@ struct Viewfinder<Content: View>: View {
             RoundedRectangle(cornerRadius: 6).fill(PW.well)
             content
             CornerBrackets()
-                .stroke(active ? PW.green : PW.bracketIdle, lineWidth: 2)
+                .stroke(PW.bracketIdle, lineWidth: 2)
                 .padding(8)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -97,6 +96,13 @@ struct CapturePreview: View {
             )
             .padding(6)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+extension CGImage {
+    /// For showing a captured region in a SwiftUI `Image`.
+    var nsImage: NSImage {
+        NSImage(cgImage: self, size: NSSize(width: width, height: height))
     }
 }
 
@@ -185,6 +191,7 @@ struct WellField: View {
     var nativeFont: NSFont? = nil
     @FocusState private var focused: Bool
     @State private var nativeFocused = false
+    @State private var boxID = UUID()
 
     private var isActive: Bool { formatter == nil ? focused : nativeFocused }
 
@@ -230,6 +237,16 @@ struct WellField: View {
         .onTapGesture {
             if formatter == nil { focused = true } else { nativeFocused = true }
         }
+        .background {
+            // Tell ClickOutsideEndsEditing where this box is, so a click inside it doesn't deselect the field.
+            GeometryReader { geometry in
+                let box = geometry.frame(in: .global)
+                Color.clear
+                    .onAppear { ClickOutsideEndsEditing.fieldBoxes[boxID] = box }
+                    .onChange(of: box) { _, new in ClickOutsideEndsEditing.fieldBoxes[boxID] = new }
+                    .onDisappear { ClickOutsideEndsEditing.fieldBoxes[boxID] = nil }
+            }
+        }
     }
 }
 
@@ -247,7 +264,6 @@ struct NativeTextField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.cell?.usesSingleLineMode = true
         field.cell?.isScrollable = true
         field.formatter = formatter
         field.delegate = context.coordinator
@@ -281,6 +297,68 @@ struct NativeTextField: NSViewRepresentable {
             guard let field = notification.object as? NSTextField else { return }
             parent.text = field.currentEditor()?.string ?? field.stringValue
         }
+    }
+}
+
+/// Opens the window with no text field selected.
+/// AppKit makes the window's `initialFirstResponder` the first responder the first time the window is
+/// placed onscreen. This view doesn't accept first responder, so the window becomes its own first
+/// responder instead, the same as clicking the background (NSWindow.makeFirstResponder(_:)).
+struct NoInitialFocus: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Anchor() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class Anchor: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window, window.initialFirstResponder == nil else { return }
+            window.initialFirstResponder = self
+        }
+
+        /// Never the target of a click, so clicks reach the background behind it (which clears the focus).
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
+/// Clicking anywhere outside the text field being edited deselects it, in every window of the app.
+/// A local event monitor sees each click before AppKit dispatches it (NSEvent.addLocalMonitorForEvents).
+/// The text being edited lives in the window's field editor, whose delegate is the text field
+/// (NSWindow.fieldEditor(_:for:)); a click outside that field makes the window its own first responder.
+enum ClickOutsideEndsEditing {
+    private static var monitor: Any?
+    /// The boxes drawn around text fields (`WellField`), in SwiftUI's window coordinates (top-left origin).
+    /// A click anywhere in a box counts as a click on its field, not outside it.
+    static var fieldBoxes: [UUID: CGRect] = [:]
+
+    /// Call once; later calls do nothing.
+    static func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { event in
+            guard let window = event.window,
+                  let editor = window.firstResponder as? NSTextView, editor.isFieldEditor,
+                  let field = editor.delegate as? NSTextField else { return event }
+            let inField = field.bounds.contains(field.convert(event.locationInWindow, from: nil))
+            if !inField && !isInOwnBox(event.locationInWindow, of: field, in: window) {
+                window.makeFirstResponder(nil)
+            }
+            return event // the click itself still goes through
+        }
+    }
+
+    /// Whether the click is inside the box drawn around `field` (not another field's box).
+    private static func isInOwnBox(_ locationInWindow: NSPoint, of field: NSTextField, in window: NSWindow) -> Bool {
+        guard let contentView = window.contentView else { return false }
+        func topLeft(_ rect: NSRect) -> CGRect {
+            var rect = contentView.convert(rect, from: nil)
+            if !contentView.isFlipped { rect.origin.y = contentView.bounds.height - rect.maxY }
+            return rect
+        }
+        let fieldRect = topLeft(field.convert(field.bounds, to: nil))
+        let click = topLeft(NSRect(origin: locationInWindow, size: .zero)).origin
+        guard let ownBox = fieldBoxes.values.first(where: { $0.contains(CGPoint(x: fieldRect.midX, y: fieldRect.midY)) }) else {
+            return false
+        }
+        return ownBox.contains(click)
     }
 }
 

@@ -1,5 +1,4 @@
 import SwiftUI
-import ScreenCaptureKit
 
 @main
 struct RaceSync_CalculatorApp: App {
@@ -7,11 +6,11 @@ struct RaceSync_CalculatorApp: App {
 
     init() {
         PWFonts.register()
-        OCRWarmup.start()
+        ClockReader.warmUp()
     }
 
     var body: some Scene {
-        WindowGroup {
+        Window("RaceSync Calculator", id: "main") {
             ContentView(captureEngine: captureEngine)
                 .fixedSize(horizontal: true, vertical: true)
         }

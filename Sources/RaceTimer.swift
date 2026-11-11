@@ -2,9 +2,9 @@ import Foundation
 import Darwin
 
 // MARK: - Race Timer -
-// In-app replacement for the Mac Clock app's race timer (2 hours, or 1 hour for a sprint).
+// In-app replacement for the Mac Clock app's race timer (2 hours, or 1 hour for a Sprint).
 // Pressing LIGHTS OUT records that instant; the remaining time is always
-// the race length minus the real time since then, so it can't fall behind.
+// the race length minus the real time since then (sleep included), so it can't fall behind.
 // Nothing is saved: every launch starts fresh.
 
 final class RaceTimer: ObservableObject {
@@ -21,17 +21,20 @@ final class RaceTimer: ObservableObject {
     var hasStarted: Bool { lightsOutTime != nil }
 
     func lightsOut() {
-        lightsOutTime = RaceTimer.hostNow()
+        lightsOutTime = RaceTimer.continuousNow()
     }
 
     func reset() {
         lightsOutTime = nil
     }
 
-    /// Remaining race time at the given host time, or nil before lights out.
+    /// Remaining race time at the given host time (`hostNow()` clock, as frames carry it), or nil before lights out.
     func remainingMs(at hostTime: Double) -> Int? {
         guard let start = lightsOutTime else { return nil }
-        let elapsedMs = Int(((hostTime - start) * 1000).rounded())
+        // The host clock stops while the Mac sleeps, so only use it for how long ago `hostTime` was
+        // (a frame is a fraction of a second old) and measure the race itself on the continuous clock.
+        let age = RaceTimer.hostNow() - hostTime
+        let elapsedMs = Int(((RaceTimer.continuousNow() - age - start) * 1000).rounded())
         return max(0, raceLengthMs - elapsedMs)
     }
 
@@ -46,6 +49,11 @@ final class RaceTimer: ObservableObject {
     /// Monotonic seconds; same clock ScreenCaptureKit uses for frame display times.
     static func hostNow() -> Double {
         seconds(fromMachTime: mach_absolute_time())
+    }
+
+    /// Like `hostNow()`, but keeps counting while the Mac sleeps (`mach_continuous_time`).
+    static func continuousNow() -> Double {
+        seconds(fromMachTime: mach_continuous_time())
     }
 
     static func seconds(fromMachTime machTime: UInt64) -> Double {
