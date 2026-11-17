@@ -52,6 +52,61 @@ enum ClockTime {
     }
 }
 
+// MARK: - Clock ticks -
+struct ClockTick {
+    let shownMs: Int
+    let time: Double
+}
+
+/// Finds the moments a clock ticked in a recording of it.
+enum TickFinder {
+    static let maxChangeTime = 0.1
+
+    static func ticks(in frames: [ClockFrame]) -> [ClockTick] {
+        ticks(times: frames.map(\.time)) { index in
+            ClockReader.readTime(from: frames[index].image).flatMap(ClockTime.milliseconds)
+        }
+    }
+
+    /// - Parameters:
+    static func ticks(times: [Double], valueAt: (Int) -> Int?) -> [ClockTick] {
+        var values: [Int: Int?] = [:]
+        func value(_ index: Int) -> Int? {
+            if let known = values[index] { return known }
+            let value = valueAt(index).map { ($0 / 1_000) * 1_000 } // whole seconds, as shown
+            values[index] = value
+            return value
+        }
+
+        var ticks: [ClockTick] = []
+        func search(_ lo: Int, _ hi: Int) {
+            guard let before = value(lo), let after = value(hi), before != after else { return }
+            let middle = (lo + hi) / 2
+            let between = ((lo + 1)..<hi).sorted { abs($0 - middle) < abs($1 - middle) }
+            if let split = between.first(where: { value($0) != nil }) {
+                search(lo, split)
+                search(split, hi)
+                return
+            }
+            guard before - after == 1_000, times[hi] - times[lo + 1] <= maxChangeTime else { return }
+            ticks.append(ClockTick(shownMs: after, time: times[lo + 1]))
+        }
+
+        let ends = 5
+        guard let first = times.indices.prefix(ends).first(where: { value($0) != nil }),
+              let last = times.indices.suffix(ends).last(where: { value($0) != nil }),
+              first < last else { return [] }
+        search(first, last)
+        return ticks
+    }
+}
+
+// MARK: - Text recognition status -
+final class TextRecognitionStatus: ObservableObject {
+    static let shared = TextRecognitionStatus()
+    @Published var isReady = false
+}
+
 // MARK: - Clock reading -
 
 /// Reads the clock in a captured image with Vision text recognition.
@@ -86,8 +141,10 @@ enum ClockReader {
 
     /// The first text recognition in a process loads Apple's model, which can take
     /// many seconds on a cold system. Do it at launch so Calculate answers right away.
+    /// `TextRecognitionStatus.shared` reports when it's done
     static func warmUp() {
         DispatchQueue.global(qos: .utility).async {
+            defer { DispatchQueue.main.async { TextRecognitionStatus.shared.isReady = true } }
             let width = 160, height = 48
             guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                       space: CGColorSpaceCreateDeviceRGB(),

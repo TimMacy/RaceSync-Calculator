@@ -39,20 +39,32 @@ enum CaptureFailure {
     }
 }
 
+/// One captured image of a clock region and the host time (`RaceTimer.hostNow()` clock) it was on screen.
+struct ClockFrame {
+    let image: CGImage
+    let time: Double
+}
+
+/// What `recordTicks` saw: for each region, every frame that looked different from the one before, in time order.
+struct TickRecording {
+    var multiViewer: [ClockFrame] = []
+    var clockApp: [ClockFrame] = []
+}
+
 final class CaptureEngine: NSObject, ObservableObject {
+    static let idleFrameRate = 5
+    static let measuringFrameRate = 60
+    private static let settleTime = 0.25
     @Published var isCapturing = false
+    @Published private(set) var frameRate = CaptureEngine.idleFrameRate
     @Published var multiViewerImage: CGImage?
     @Published var clockAppImage: CGImage?
-    /// Host time (seconds, same clock as `RaceTimer.hostNow()`) at which the current `multiViewerImage` was on screen.
     @Published var multiViewerFrameTime: Double?
-    /// Set when capture couldn't start or stopped on its own; cleared by the next start or stop.
     @Published var failure: CaptureFailure?
-
     private var stream: SCStream? // Main thread only
+    private var streamConfiguration: SCStreamConfiguration? // Main thread only; kept to change the frame rate
+    @MainActor private var recordingID = 0
     @MainActor private var captureTask: Task<Void, Never>?
-
-    /// Everything the frame handler needs to crop a frame, fixed for the life of one stream.
-    /// Regions are in points with a top-left origin, relative to the captured screen.
     private struct CropSettings {
         let multiViewerRegion: CGRect?
         let clockAppRegion: CGRect?
@@ -60,6 +72,28 @@ final class CaptureEngine: NSObject, ObservableObject {
     }
     /// Written on the main thread and read on `videoOutputQueue`, so it sits behind a lock.
     private let cropSettings = OSAllocatedUnfairLock<CropSettings?>(initialState: nil)
+
+    /// Collects one region's frames during a tick recording, skipping frames identical to the one before.
+    private struct FrameLog {
+        static let maxBytes = 256 * 1024 * 1024
+
+        private(set) var frames: [ClockFrame] = []
+        private var lastPixels: CFData?
+        private var bytes = 0
+
+        mutating func add(_ image: CGImage?, at time: Double) {
+            guard let image, bytes < Self.maxBytes, let pixels = image.dataProvider?.data else { return }
+            if let lastPixels, CFEqual(lastPixels, pixels) { return }
+            lastPixels = pixels
+            bytes += CFDataGetLength(pixels)
+            frames.append(ClockFrame(image: image, time: time))
+        }
+    }
+    private struct Recorder {
+        var multiViewer = FrameLog()
+        var clockApp = FrameLog()
+    }
+    private let recorder = OSAllocatedUnfairLock<Recorder?>(uncheckedState: nil)
 
     private let videoOutputQueue = DispatchQueue(label: "com.racesync.calculator.videoOutput", qos: .userInitiated)
     /// One Core Image context for every frame: creating one is expensive, and it is safe to use from any thread.
@@ -91,7 +125,6 @@ final class CaptureEngine: NSObject, ObservableObject {
                 let scaleFactor = screen.backingScaleFactor
 
                 // Leave this app's own windows out of the capture, as Apple's ScreenCaptureKit sample does,
-                // so this window can overlap a selected region without being read as the timer.
                 let ownApps = availableContent.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
                 let filter = SCContentFilter(display: targetDisplay, excludingApplications: ownApps, exceptingWindows: [])
 
@@ -99,7 +132,7 @@ final class CaptureEngine: NSObject, ObservableObject {
                 // Use backingScaleFactor from NSScreen for correct pixel dimensions
                 streamConfig.width = Int(CGFloat(targetDisplay.width) * scaleFactor)
                 streamConfig.height = Int(CGFloat(targetDisplay.height) * scaleFactor)
-                streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: 5) // 5 fps is enough for clocks that tick once a second
+                streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(Self.idleFrameRate))
                 streamConfig.queueDepth = 5
                 streamConfig.pixelFormat = kCVPixelFormatType_32BGRA
                 streamConfig.scalesToFit = true // Important for matching display coordinates
@@ -112,6 +145,8 @@ final class CaptureEngine: NSObject, ObservableObject {
 
                 let stream = SCStream(filter: filter, configuration: streamConfig, delegate: self)
                 self.stream = stream
+                streamConfiguration = streamConfig
+                frameRate = Self.idleFrameRate
 
                 try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoOutputQueue)
                 try await stream.startCapture()
@@ -147,6 +182,55 @@ final class CaptureEngine: NSObject, ObservableObject {
             clockAppImage = nil
             cropSettings.withLock { $0 = nil }
         }
+    }
+
+    // MARK: Tick recording
+    @MainActor
+    func recordTicks(for duration: Double) async -> TickRecording? {
+        guard isCapturing, let stream else { return nil }
+        recordingID += 1
+        let id = recordingID
+        guard await setFrameRate(Self.measuringFrameRate, of: stream) else { return nil }
+
+        try? await Task.sleep(for: .seconds(Self.settleTime))
+        guard id == recordingID else { return nil }
+
+        // Start from what is on screen now, so the first change has a frame to be compared with.
+        var start = Recorder()
+        let now = multiViewerFrameTime ?? RaceTimer.hostNow()
+        start.multiViewer.add(multiViewerImage, at: now)
+        start.clockApp.add(clockAppImage, at: now)
+        recorder.withLockUnchecked { $0 = start }
+
+        try? await Task.sleep(for: .seconds(duration))
+        guard id == recordingID else { return nil }
+
+        let recorded = recorder.withLockUnchecked { recorder in
+            defer { recorder = nil }
+            return recorder
+        }
+        if self.stream === stream {
+            _ = await setFrameRate(Self.idleFrameRate, of: stream)
+        }
+        guard let recorded else { return nil }
+        return TickRecording(multiViewer: recorded.multiViewer.frames, clockApp: recorded.clockApp.frames)
+    }
+
+    /// Changes the running stream's frame rate with `SCStream.updateConfiguration`, without restarting it.
+    /// False if the stream didn't take the new configuration.
+    @MainActor
+    private func setFrameRate(_ framesPerSecond: Int, of stream: SCStream) async -> Bool {
+        guard let streamConfiguration else { return false }
+        // Apple: "specify the minimum frame interval as the reciprocal of the maximum frame rate".
+        streamConfiguration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(framesPerSecond))
+        do {
+            try await stream.updateConfiguration(streamConfiguration)
+        } catch {
+            print("Error changing the frame rate: \(error.localizedDescription)")
+            return false
+        }
+        if self.stream === stream { frameRate = framesPerSecond }
+        return true
     }
 
     /// ScreenCaptureKit reports a missing Screen Recording permission as `SCStreamError.userDeclined`.
@@ -208,6 +292,12 @@ extension CaptureEngine: SCStreamOutput, SCStreamDelegate {
         }
         let newClockAppImage = settings.clockAppRegion.flatMap {
             Self.crop(frame, to: $0, scaleFactor: settings.scaleFactor, context: ciContext)
+        }
+
+        // During a tick recording, keep every frame that changed, with the time it was on screen.
+        recorder.withLockUnchecked { recorder in
+            recorder?.multiViewer.add(newMultiViewerImage, at: frameTime)
+            recorder?.clockApp.add(newClockAppImage, at: frameTime)
         }
 
         DispatchQueue.main.async {

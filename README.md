@@ -32,6 +32,10 @@ For sessions without a visible timer, like a race:
 
 For races that use neither the 2-hour Race period nor the 1-hour Sprint period, the Clock app can be captured instead via the **Select Clock app timer region** button. The timer has to be started the same way as described in point 5.
 
+Race timer calculations measure clock ticks for about 2.5 s using 60 fps, with an offset rounded to 10 ms. If no usable ticks are detected, whole seconds are used instead.
+
+While Apple's text recognition model is loading, **PREPARING TEXT RECOGNITION** is shown in the footer. The first calculation may take longer if started during this process.
+
 <br clear="right" />
 
 ## Install

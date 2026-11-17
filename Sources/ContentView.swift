@@ -18,6 +18,7 @@ private enum SyncReference {
 struct ContentView: View {
     @ObservedObject var captureEngine: CaptureEngine
     @StateObject private var raceTimer = RaceTimer()
+    @ObservedObject private var textRecognition = TextRecognitionStatus.shared
 
     @State private var mode: TimerMode = .session
     @Namespace private var modeNamespace
@@ -34,7 +35,7 @@ struct ContentView: View {
     @State private var calculationID = 0
     @State private var confirmReset = false
     @State private var isCalculating = false
-    @State private var showReadingHint = false // only if reading takes over a second
+    @State private var progressText: String?
     @State private var copied = false
     @State private var copyID = 0
     @State private var isHoveringModeToggle = false
@@ -42,7 +43,6 @@ struct ContentView: View {
     // Fixed sizes so the window never changes height.
     private static let feedsHeight: CGFloat = 330
     private static let headerHeight: CGFloat = 52
-    /// Height of the (hidden) title bar the header sits under.
     private static let titlebarHeight: CGFloat = {
         let content = NSRect(x: 0, y: 0, width: 100, height: 100)
         let frame = NSWindow.frameRect(forContentRect: content, styleMask: [.titled, .closable, .miniaturizable])
@@ -50,7 +50,6 @@ struct ContentView: View {
     }()
     private static let sessionFormatter = SessionTimeFormatter()
     private static let resultHeight: CGFloat = 144 // fits the 64 pt number without re-centering
-    /// Longest current delay that can be typed (99 999 999 ms, over a day), so the sum can't overflow.
     private static let maxDelayDigits = 8
 
     init(captureEngine: CaptureEngine) {
@@ -113,7 +112,7 @@ struct ContentView: View {
     private func clearOutcome() {
         calculationID += 1 // drop any result still on its way
         isCalculating = false
-        showReadingHint = false
+        progressText = nil
         outcome = nil
     }
 
@@ -389,7 +388,7 @@ struct ContentView: View {
             Text("Offset detected").font(PW.ui(12)).foregroundStyle(PW.muted)
             HStack(spacing: 10) {
                 if case let .delay(_, offsetMs) = outcome {
-                    Text(String(format: "%+ds", offsetMs / 1000))
+                    Text(Self.offsetText(offsetMs))
                         .font(PW.mono(20, .bold))
                         .foregroundStyle(PW.green)
                     Text(offsetMs > 0 ? "MultiViewer ahead of TV" : offsetMs < 0 ? "MultiViewer behind TV" : "In sync")
@@ -419,8 +418,8 @@ struct ContentView: View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 SectionLabel("RECOMMENDED DELAY")
-                if showReadingHint {
-                    Text("Reading MultiViewer…")
+                if let progressText {
+                    Text(progressText)
                         .pwDisplay(28)
                         .foregroundStyle(PW.muted)
                 } else {
@@ -499,7 +498,11 @@ struct ContentView: View {
 
     private var footer: some View {
         HStack {
-            Text(captureEngine.isCapturing ? "CAPTURING · 5 FPS" : "NOT CAPTURING")
+            if textRecognition.isReady {
+                Text(captureEngine.isCapturing ? "CAPTURING · \(captureEngine.frameRate) FPS" : "NOT CAPTURING")
+            } else {
+                Text("PREPARING TEXT RECOGNITION")
+            }
             Spacer()
             if mode == .session {
                 Text("SESSION MODE")
@@ -590,30 +593,61 @@ struct ContentView: View {
             }
         }
 
-        // Text recognition can take a while; keep it off the main thread so the app never freezes.
         let raceLengthMs: Int? = mode == .race ? raceTimer.raceLengthMs : nil
+        let timesTicks = mode == .race
+        let usesClockApp = usesClockApp
         calculationID += 1
         let id = calculationID
-        isCalculating = true // the current result stays on screen until the new one is ready
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            if isCalculating && id == calculationID { showReadingHint = true }
-        }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let mvText = ClockReader.readTime(from: mvImage)
-            let tvClock: SyncCalculator.Reference
-            switch reference {
-            case let .fixed(ms): tvClock = .fixed(ms)
-            case let .clockImage(image): tvClock = .clockText(ClockReader.readTime(from: image))
-            }
-            let result = SyncCalculator.evaluate(mvText: mvText, reference: tvClock,
-                                                 currentDelayMs: delayMs, raceLengthMs: raceLengthMs)
-            DispatchQueue.main.async {
-                guard id == calculationID else { return } // mode or region changed meanwhile
-                isCalculating = false
-                showReadingHint = false
-                outcome = result
+        isCalculating = true
+        if timesTicks {
+            progressText = "Calculating…"
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                if isCalculating && id == calculationID { progressText = "Reading MultiViewer…" }
             }
         }
+
+        Task {
+            var result = await Task.detached(priority: .userInitiated) {
+                let mvText = ClockReader.readTime(from: mvImage)
+                let tvClock: SyncCalculator.Reference
+                switch reference {
+                case let .fixed(ms): tvClock = .fixed(ms)
+                case let .clockImage(image): tvClock = .clockText(ClockReader.readTime(from: image))
+                }
+                return SyncCalculator.evaluate(mvText: mvText, reference: tvClock,
+                                               currentDelayMs: delayMs, raceLengthMs: raceLengthMs)
+            }.value
+            guard id == calculationID else { return } // mode or region changed meanwhile
+
+            // Race mode: once both clocks read fine, time their ticks to get from whole seconds to milliseconds.
+            if timesTicks, case .delay = result,
+               let tickTimed = await tickTimedOutcome(delayMs: delayMs, usesClockApp: usesClockApp) {
+                result = tickTimed
+            }
+            guard id == calculationID else { return }
+            isCalculating = false
+            progressText = nil
+            outcome = result
+        }
+    }
+
+    /// How long the clocks are recorded: a little over two seconds, so each one ticks at least twice.
+    private static let tickRecordingTime = 2.1
+
+    /// The delay from the moments the clocks tick, or nil to keep the whole-second result
+    /// (no tick was seen, e.g. MultiViewer is paused).
+    private func tickTimedOutcome(delayMs: Int, usesClockApp: Bool) async -> SyncOutcome? {
+        guard let recording = await captureEngine.recordTicks(for: Self.tickRecordingTime) else { return nil }
+        let (mvTicks, clockTicks) = await Task.detached(priority: .userInitiated) {
+            (TickFinder.ticks(in: recording.multiViewer),
+             usesClockApp ? TickFinder.ticks(in: recording.clockApp) : [])
+        }.value
+        // The TV clock at the moment MultiViewer ticked: the in-app timer knows it exactly,
+        // the Clock app's is worked out from its own closest tick.
+        return SyncCalculator.evaluate(mvTicks: mvTicks, referenceMs: { time in
+            usesClockApp ? SyncCalculator.exactMs(from: clockTicks, at: time) : raceTimer.remainingMs(at: time)
+        }, currentDelayMs: delayMs)
     }
 
     private func copyDelay() {
@@ -628,6 +662,11 @@ struct ContentView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if id == copyID { copied = false }
         }
+    }
+
+    /// "+2s" for a whole-second offset, "+2.35s" for one timed to the tick.
+    static func offsetText(_ ms: Int) -> String {
+        ms % 1_000 == 0 ? String(format: "%+ds", ms / 1_000) : String(format: "%+.2fs", Double(ms) / 1_000)
     }
 
     /// 12480 -> "12 480"
